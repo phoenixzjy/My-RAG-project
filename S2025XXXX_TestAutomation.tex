@@ -1,0 +1,678 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.3cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+
+\definecolor{codeblue}{RGB}{36,86,148}
+\definecolor{codegreen}{RGB}{40,120,70}
+\definecolor{codegray}{RGB}{105,105,105}
+\definecolor{codebackground}{RGB}{247,247,247}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=codeblue,
+  urlcolor=codeblue,
+  citecolor=codeblue,
+  pdftitle={PaiSmart Application and Test Automation Report}
+}
+
+\lstset{
+  backgroundcolor=\color{codebackground},
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  commentstyle=\color{codegreen},
+  frame=single,
+  keywordstyle=\color{codeblue}\bfseries,
+  numbers=left,
+  numbersep=8pt,
+  numberstyle=\tiny\color{codegray},
+  showstringspaces=false,
+  tabsize=2
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{PaiSmart Test Automation}
+\rhead{Student ID: S2025XXXX}
+\cfoot{\thepage}
+\setlength{\headheight}{14pt}
+
+\title{\textbf{Application Development and Test Automation Report}\\
+\large A Document Knowledge Base Module Based on PaiSmart}
+\author{Student Name: XXX\\Student ID: S2025XXXX}
+\date{June 7, 2026}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+This report presents a small web application module developed and studied within the
+PaiSmart project: a document knowledge base that supports file upload, document
+processing, text chunking, indexing, and hybrid retrieval. The report explains how the
+module is assembled from a Vue 3 front end and a Spring Boot back end, how its major
+components cooperate, and how it can be demonstrated as a self-contained application.
+It then describes the design and execution of automated tests for user registration,
+authentication, conversation persistence, and text chunking. The executable unit-test
+suite uses JUnit 5, Mockito, and Maven Surefire. On June 7, 2026, the selected suite
+executed 10 tests with zero failures, zero errors, and zero skipped tests. The report
+also evaluates additional automation tools that can extend the project from unit
+testing to API, browser, integration, coverage, and performance testing.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Assignment Interpretation and Project Plan}
+
+The assignment requires three connected deliverables:
+\begin{enumerate}[leftmargin=2em]
+  \item create or identify a small website, application, or software module;
+  \item write automated test scripts for important behavior; and
+  \item submit a report describing both the application and the testing work.
+\end{enumerate}
+
+Instead of claiming that the complete PaiSmart platform was created from the beginning
+for this assignment, this work selects and packages one coherent feature as the small
+application: the \textbf{Document Knowledge Base and Retrieval Module}. This scope is
+large enough to demonstrate full-stack development, but focused enough to explain and
+test clearly.
+
+The practical completion plan is:
+\begin{enumerate}[leftmargin=2em]
+  \item inspect the existing PaiSmart architecture and choose a demonstrable module;
+  \item identify the front-end pages, REST controllers, services, repositories, and
+        infrastructure used by that module;
+  \item prepare a repeatable demonstration of document upload and retrieval;
+  \item treat the Java files under
+        \path{src/test/java/com/yizhaoqi/smartpai/service/} as automated test scripts;
+  \item repair outdated mocks so the tests match the current production code;
+  \item run a lightweight unit-test suite that does not require external services;
+  \item record actual Maven Surefire results; and
+  \item document future API, browser, integration, coverage, and performance tests.
+\end{enumerate}
+
+\section{Application: Document Knowledge Base and Retrieval Module}
+
+\subsection{Purpose and User Problem}
+
+The selected application helps a user convert ordinary documents into a searchable
+knowledge base. A user can upload a document, monitor upload progress, associate it
+with an organization tag, choose whether it is public or private, and search the
+processed content. This solves a common problem: information may exist in files, but it
+is difficult to find relevant passages quickly by filename alone.
+
+The module provides the following user-visible functions:
+\begin{itemize}[leftmargin=2em]
+  \item chunked file upload with progress tracking and interrupted-upload recovery;
+  \item file type validation and MD5-based file identification;
+  \item document listing, preview, deletion, and organization-based access control;
+  \item asynchronous parsing and text chunking;
+  \item vector and keyword indexing in Elasticsearch; and
+  \item hybrid knowledge-base search with ranked passages and source filenames.
+\end{itemize}
+
+\subsection{Technology Stack}
+
+\begin{table}[htbp]
+\centering
+\caption{Technology stack used by the selected module}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+\textbf{Layer} & \textbf{Technology and responsibility} \\
+\midrule
+Front end &
+Vue 3.5, TypeScript, Vite 6, Naive UI, Pinia, Vue Router, and pnpm. The front end
+implements the knowledge-base page, upload dialog, search dialog, progress display,
+and API calls. \\
+Back end &
+Java 17 and Spring Boot 3.4.2. Spring MVC exposes REST endpoints; service classes
+implement business logic; Spring Data JPA accesses relational data. \\
+Database &
+MySQL 8 stores users, uploaded-file metadata, conversations, organization tags, and
+document-related records. \\
+Cache and upload state &
+Redis stores temporary upload state, including bitmap information for uploaded chunks. \\
+Object storage &
+MinIO stores file chunks and merged documents. \\
+Asynchronous processing &
+Apache Kafka transfers file-processing tasks after chunks have been merged. \\
+Document processing &
+Apache Tika extracts text; HanLP supports Chinese-language text segmentation. \\
+Search &
+Elasticsearch 8.10 stores indexed document content and supports retrieval. \\
+Security &
+Spring Security and JWT protect endpoints and identify the current user. \\
+Testing &
+JUnit 5, Mockito, Spring Boot Test, Maven Surefire, and Spring test utilities. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Application Architecture}
+
+The module follows a layered architecture:
+\begin{enumerate}[leftmargin=2em]
+  \item \textbf{Presentation layer.} Vue components display the document table and
+        dialogs. The key files are
+        \path{frontend/src/views/knowledge-base/index.vue},
+        \path{modules/upload-dialog.vue}, and
+        \path{modules/search-dialog.vue}.
+  \item \textbf{API layer.} Controllers such as \texttt{UploadController},
+        \texttt{DocumentController}, and \texttt{SearchController} receive HTTP
+        requests, validate request data, and return structured responses.
+  \item \textbf{Service layer.} \texttt{UploadService}, \texttt{ParseService},
+        \texttt{VectorizationService}, \texttt{HybridSearchService}, and
+        \texttt{DocumentService} implement the workflow.
+  \item \textbf{Persistence layer.} Spring Data repositories store file metadata,
+        document vectors, chunks, users, and conversations.
+  \item \textbf{Infrastructure layer.} MySQL, Redis, MinIO, Kafka, Elasticsearch, and
+        external embedding services provide storage and processing capabilities.
+\end{enumerate}
+
+This separation makes individual business services testable with mocks. For example,
+\texttt{ConversationService} can be tested without starting MySQL because
+\texttt{UserRepository} and \texttt{ConversationRepository} are replaced by Mockito
+objects.
+
+\subsection{How the Small Application Was Created}
+
+The small application is produced by selecting the knowledge-base feature from the
+larger PaiSmart system and organizing its implementation into a complete user journey.
+The development process is as follows.
+
+\subsubsection{Step 1: Define the functional scope}
+
+The scope includes document upload, processing, management, and retrieval. Chat,
+administration, and unrelated user-interface pages remain part of PaiSmart but are not
+the main demonstration target.
+
+\subsubsection{Step 2: Build the front-end workflow}
+
+The knowledge-base page loads document records and displays filename, MD5, size,
+upload status, organization tag, visibility, and creation time. The upload dialog
+collects a file, organization tag, and public/private setting. The front end calculates
+an MD5 value, divides a large file into chunks, sends chunks to the server, and can
+resume an interrupted upload. The search dialog sends a query and a \texttt{topK}
+parameter to the hybrid-search endpoint, then displays ranked text passages, scores,
+and source filenames.
+
+\subsubsection{Step 3: Implement the upload API}
+
+\texttt{UploadController} exposes endpoints under \path{/api/v1/upload}. The chunk
+endpoint receives file metadata and a multipart chunk. The controller validates the
+file type, determines the user's organization tag when necessary, delegates storage to
+\texttt{UploadService}, and reports upload progress.
+
+After all chunks arrive, the merge endpoint:
+\begin{enumerate}[leftmargin=2em]
+  \item checks that the file belongs to the current user;
+  \item confirms that all expected chunks have been uploaded;
+  \item asks \texttt{UploadService} to compose the chunks in MinIO;
+  \item creates a \texttt{FileProcessingTask}; and
+  \item publishes the task to Kafka for asynchronous parsing and indexing.
+\end{enumerate}
+
+\subsubsection{Step 4: Parse and index the document}
+
+The file-processing consumer retrieves the merged document. \texttt{ParseService}
+extracts text and splits long content into manageable chunks. Each text chunk can then
+be transformed into an embedding by \texttt{VectorizationService}. Searchable content
+and vector information are stored for later retrieval.
+
+\subsubsection{Step 5: Implement retrieval}
+
+The search page calls the hybrid-search endpoint. The back end combines retrieval
+signals, ranks matching chunks, applies access-control rules, and returns results. The
+front end highlights matching query text and shows the source document for traceability.
+
+\subsubsection{Step 6: Add security and multi-tenant separation}
+
+JWT authentication identifies the caller. Organization tags and visibility fields
+restrict which documents a user can access. A document can be private to an
+organization or public according to its metadata.
+
+\subsection{End-to-End Execution Flow}
+
+The application flow can be summarized as:
+\begin{center}
+\texttt{Select file}
+$\rightarrow$ \texttt{calculate MD5}
+$\rightarrow$ \texttt{upload chunks}
+$\rightarrow$ \texttt{merge in MinIO}
+$\rightarrow$ \texttt{publish Kafka task}
+$\rightarrow$ \texttt{parse text}
+$\rightarrow$ \texttt{split and vectorize}
+$\rightarrow$ \texttt{index}
+$\rightarrow$ \texttt{hybrid search}.
+\end{center}
+
+\subsection{Running and Demonstrating the Application}
+
+The infrastructure can be started from the supplied Docker Compose configuration:
+\begin{lstlisting}[language=bash]
+docker compose -f docs/docker-compose.yaml up -d
+\end{lstlisting}
+
+The back end can then be started from the project root:
+\begin{lstlisting}[language=bash]
+mvn spring-boot:run
+\end{lstlisting}
+
+The front end can be started separately:
+\begin{lstlisting}[language=bash]
+cd frontend
+pnpm install
+pnpm dev
+\end{lstlisting}
+
+A suitable demonstration is:
+\begin{enumerate}[leftmargin=2em]
+  \item sign in to the application;
+  \item open the knowledge-base page;
+  \item upload a small PDF, DOCX, or TXT document;
+  \item observe upload and processing status;
+  \item open the search dialog;
+  \item enter a phrase that appears in the document; and
+  \item show the returned passage, relevance score, and source filename.
+\end{enumerate}
+
+\section{Automated Test Report}
+
+\subsection{Test Objectives}
+
+The automated tests are intended to verify deterministic business rules quickly and
+repeatably. The selected unit-test suite checks:
+\begin{itemize}[leftmargin=2em]
+  \item successful user registration;
+  \item rejection of a duplicate username;
+  \item successful password authentication;
+  \item rejection of invalid credentials;
+  \item persistence of a conversation record;
+  \item retrieval of a user's conversation history;
+  \item preservation of text when long sentences are divided into chunks;
+  \item empty, short, and long text boundary behavior;
+  \item compliance with different chunk-size limits; and
+  \item basic execution-time behavior for text splitting.
+\end{itemize}
+
+\subsection{Existing Automated Test Scripts}
+
+The service test directory contains five relevant test classes:
+
+\begin{longtable}{@{}p{0.29\textwidth}p{0.18\textwidth}p{0.45\textwidth}@{}}
+\caption{Classification of existing service tests}\\
+\toprule
+\textbf{Test class} & \textbf{Type} & \textbf{Purpose and execution conditions} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Test class} & \textbf{Type} & \textbf{Purpose and execution conditions} \\
+\midrule
+\endhead
+\texttt{ConversationServiceTest} &
+Unit test &
+Uses Mockito repositories to verify conversation saving and retrieval without starting
+Spring or a database. \\
+\texttt{UserServiceTest} &
+Unit test &
+Uses Mockito to isolate registration and authentication logic. It verifies repository
+interactions, password hashing, roles, private organization tags, cache updates, and
+error responses. \\
+\texttt{ParseServiceUnitTest} &
+Unit test &
+Creates \texttt{ParseService} directly and invokes the private splitting method through
+reflection. It checks reconstruction, edge cases, size limits, and a broad timing
+threshold. \\
+\texttt{ParseServiceTest} &
+Spring-context test &
+Uses \texttt{@SpringBootTest}. It exercises similar splitting behavior but attempts to
+load the application context, so it is heavier and may depend on configuration. \\
+\texttt{UploadServicePerformanceTest} &
+Illustrative Spring test &
+Logs a calculated comparison between repeated Redis calls and one bitmap retrieval.
+It is useful documentation, but it is not a real benchmark because it does not measure
+the production methods against a live or simulated Redis workload. \\
+\bottomrule
+\end{longtable}
+
+The first three classes form the repeatable assignment suite because they execute
+without MySQL, Redis, Kafka, MinIO, Elasticsearch, or a running Spring application.
+
+\subsection{How the Test Automation Scripts Were Written}
+
+\subsubsection{Arrange--Act--Assert structure}
+
+Each test follows the Arrange--Act--Assert pattern:
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{Arrange:} create model objects and define mock responses;
+  \item \textbf{Act:} call one public service method; and
+  \item \textbf{Assert:} check returned values, exceptions, state, or dependency calls.
+\end{itemize}
+
+\subsubsection{Mocking external dependencies}
+
+Mockito annotations isolate the class under test:
+\begin{lstlisting}[language=Java]
+@Mock
+private ConversationRepository conversationRepository;
+
+@Mock
+private UserRepository userRepository;
+
+@InjectMocks
+private ConversationService conversationService;
+\end{lstlisting}
+
+The test defines repository behavior and then verifies the service interaction:
+\begin{lstlisting}[language=Java]
+when(userRepository.findByUsername("testuser"))
+    .thenReturn(Optional.of(user));
+
+conversationService.recordConversation(
+    "testuser",
+    "What is AI?",
+    "AI stands for Artificial Intelligence.");
+
+verify(conversationRepository, times(1))
+    .save(any(Conversation.class));
+\end{lstlisting}
+
+\subsubsection{Testing normal and exceptional paths}
+
+The user-service tests cover both successful and unsuccessful behavior. For duplicate
+registration, the repository returns an existing user and the test asserts both the
+exception message and HTTP status:
+\begin{lstlisting}[language=Java]
+CustomException exception = assertThrows(
+    CustomException.class,
+    () -> userService.registerUser("testuser", "password123"));
+
+assertEquals("Username already exists", exception.getMessage());
+assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
+\end{lstlisting}
+
+\subsubsection{Capturing saved entities}
+
+Registration has no return value, so an \texttt{ArgumentCaptor} inspects the object sent
+to the repository. The test verifies that the password is not stored as plain text,
+that it matches through \texttt{PasswordUtil}, and that role and organization fields
+are assigned correctly.
+
+\subsubsection{Testing text chunking}
+
+\texttt{ParseServiceUnitTest} invokes \texttt{splitLongSentence} through reflection
+because the method is private. The most important invariant is lossless reconstruction:
+\begin{lstlisting}[language=Java]
+List<String> result =
+    (List<String>) method.invoke(parseService, sentence, chunkSize);
+
+String reconstructed = String.join("", result);
+assertEquals(sentence, reconstructed);
+\end{lstlisting}
+
+Although reflection is acceptable for the current assignment, a future refactoring
+could move chunking into a dedicated package-private component. That would make the
+behavior directly testable without exposing it as a public API.
+
+\subsection{Repair Made to the Existing Test Suite}
+
+The current \texttt{UserService.registerUser} method depends on
+\texttt{OrganizationTagRepository} and \texttt{OrgTagCacheService}. The previous test
+mocked only \texttt{UserRepository}; therefore, the successful registration test threw
+a \texttt{NullPointerException}. The automated script was updated to:
+\begin{itemize}[leftmargin=2em]
+  \item mock \texttt{OrganizationTagRepository};
+  \item mock \texttt{OrgTagCacheService};
+  \item define behavior for the default and private organization tags;
+  \item expect two user-save operations performed by the current implementation;
+  \item verify password hashing, role, private tag, and primary organization; and
+  \item verify organization-tag creation and cache updates.
+\end{itemize}
+
+This repair is important because an automated test is useful only when it reflects the
+current production contract.
+
+\subsection{Test Cases and Expected Results}
+
+\begin{longtable}{@{}p{0.08\textwidth}p{0.30\textwidth}p{0.50\textwidth}@{}}
+\caption{Executed automated test cases}\\
+\toprule
+\textbf{ID} & \textbf{Test method} & \textbf{Expected result} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{ID} & \textbf{Test method} & \textbf{Expected result} \\
+\midrule
+\endhead
+UT-01 & \texttt{testRegisterUser\_Success} &
+The user is saved with a hashed password, USER role, private organization tag, and
+cache entries. \\
+UT-02 & \texttt{testRegisterUser\_UsernameExists} &
+A duplicate username produces \texttt{400 BAD REQUEST}. \\
+UT-03 & \texttt{testAuthenticateUser\_Success} &
+The correct raw password matches the stored hash and returns the username. \\
+UT-04 & \texttt{testAuthenticateUser\_InvalidCredentials} &
+An unknown user produces \texttt{401 UNAUTHORIZED}. \\
+UT-05 & \texttt{testRecordConversation} &
+One conversation entity is passed to the repository's save method. \\
+UT-06 & \texttt{testGetConversations} &
+The service returns the repository's conversation list for the user ID. \\
+UT-07 & \texttt{testSplitLongSentence\_BasicFunctionality} &
+The result is nonempty and reconstructs the original sentence. \\
+UT-08 & \texttt{testSplitLongSentence\_EdgeCases} &
+Empty, one-character, and long inputs are handled without content loss. \\
+UT-09 & \texttt{testSplitLongSentence\_ChunkSizeValidation} &
+Chunks respect several requested sizes and reconstruct the source text. \\
+UT-10 & \texttt{testSplitLongSentence\_Performance} &
+A 2,900-character input is divided successfully in less than five seconds. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Test Execution Command}
+
+The verified lightweight suite was executed with Java 17:
+\begin{lstlisting}[language=bash]
+mvn "-Dtest=ConversationServiceTest,UserServiceTest,ParseServiceUnitTest" test
+\end{lstlisting}
+
+Individual classes or methods can also be executed:
+\begin{lstlisting}[language=bash]
+mvn -Dtest=ConversationServiceTest test
+mvn -Dtest=UserServiceTest test
+mvn -Dtest=ParseServiceUnitTest test
+mvn -Dtest=ConversationServiceTest#testRecordConversation test
+\end{lstlisting}
+
+\subsection{Verified Test Results}
+
+The suite was executed on \textbf{June 7, 2026 at 12:11 China Standard Time
+(UTC+8)}. Maven Surefire reported:
+
+\begin{table}[htbp]
+\centering
+\caption{Verified Maven Surefire results}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\textbf{Test class} & \textbf{Run} & \textbf{Failures} & \textbf{Errors} & \textbf{Skipped} \\
+\midrule
+\texttt{ConversationServiceTest} & 2 & 0 & 0 & 0 \\
+\texttt{ParseServiceUnitTest} & 4 & 0 & 0 & 0 \\
+\texttt{UserServiceTest} & 4 & 0 & 0 & 0 \\
+\midrule
+\textbf{Total} & \textbf{10} & \textbf{0} & \textbf{0} & \textbf{0} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The Maven result was \texttt{BUILD SUCCESS}. Surefire generated machine-readable XML
+and text reports under \path{target/surefire-reports/}. These files can be archived by
+a continuous-integration server.
+
+\subsection{Analysis of Test Quality and Limitations}
+
+The executed tests are fast and isolated, making them suitable for every local build
+and every commit. They verify important service behavior without failures caused by
+unavailable infrastructure.
+
+However, the current coverage is not complete:
+\begin{itemize}[leftmargin=2em]
+  \item the upload controller and upload service are not covered by realistic unit tests;
+  \item no test verifies Kafka publication after a successful merge;
+  \item no integration test verifies MinIO composition, Redis bitmaps, or Elasticsearch;
+  \item no browser test performs the complete upload-and-search workflow;
+  \item the conversation tests do not yet cover missing users, date filters, or
+        administrator authorization;
+  \item the authentication tests should add an existing user with a wrong password; and
+  \item the current performance test uses a generous threshold and is not a statistically
+        reliable benchmark.
+\end{itemize}
+
+\section{At Least Five Available Test Automation Tools and Their Functions}
+
+This section lists at least five available test automation tools and discusses their
+main functions and possible applications in PaiSmart. Eight tools are included to
+cover unit testing, test execution, code coverage, API testing, end-to-end testing,
+integration testing, and performance testing.
+
+\begin{longtable}{@{}p{0.20\textwidth}p{0.28\textwidth}p{0.44\textwidth}@{}}
+\caption{Recommended automation tools}\\
+\toprule
+\textbf{Tool} & \textbf{Testing level} & \textbf{Function in PaiSmart} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Tool} & \textbf{Testing level} & \textbf{Function in PaiSmart} \\
+\midrule
+\endhead
+JUnit 5 &
+Unit and integration testing &
+Defines Java test cases, lifecycle methods, assertions, parameterized tests, tags, and
+test suites. It is the primary framework used by the existing service tests. \\
+Mockito &
+Unit testing &
+Creates mock repositories and services, configures return values, captures arguments,
+and verifies interactions. It keeps business tests independent of MySQL, Redis, and
+other systems. \\
+Maven Surefire &
+Test execution and reporting &
+Discovers JUnit tests during the Maven \texttt{test} phase and produces console, text,
+and XML results suitable for CI pipelines. \\
+JaCoCo &
+Code coverage &
+Measures line and branch coverage. It can reveal untested paths in upload, parsing,
+security, and search services and can enforce a minimum coverage threshold. \\
+Postman and Newman &
+REST API testing &
+Postman defines collections for login, upload status, merge, document listing, and
+search endpoints. Newman runs the same collection automatically from the command line
+or CI. \\
+Playwright &
+End-to-end browser testing &
+Automates Chromium, Firefox, or WebKit to test login, file selection, upload progress,
+search, preview, and deletion from the user's point of view. \\
+Testcontainers &
+Integration testing &
+Starts disposable MySQL, Redis, Kafka, MinIO, or Elasticsearch containers for tests,
+providing realistic infrastructure without relying on manually maintained shared
+services. \\
+JMeter &
+Load and performance testing &
+Generates concurrent upload and search traffic, measures throughput and latency, and
+helps evaluate Redis bitmap optimization and Elasticsearch query performance. \\
+\bottomrule
+\end{longtable}
+
+\section{Recommended Next Automation Stages}
+
+\subsection{Stage 1: Improve Unit Coverage}
+
+Add tests for missing users, wrong passwords, administrator access, date-filtered
+conversation queries, file type validation, upload progress calculation, and search
+result mapping. These tests should remain independent of external services.
+
+\subsection{Stage 2: Add API Automation}
+
+Create a Postman collection with environment variables for the base URL and JWT token.
+The collection should automate:
+\begin{enumerate}[leftmargin=2em]
+  \item registration and login;
+  \item supported-file-type retrieval;
+  \item upload-status queries;
+  \item document listing and deletion;
+  \item hybrid search; and
+  \item authorization failures for inaccessible documents.
+\end{enumerate}
+
+Newman can execute the collection in CI and generate an HTML or JUnit-style report.
+
+\subsection{Stage 3: Add Containerized Integration Tests}
+
+Use Testcontainers to start infrastructure for tests. A focused integration test can
+upload chunks, verify Redis state, merge content in MinIO, consume a Kafka task, index
+document content, and query Elasticsearch. These tests should run separately from the
+fast unit tests, for example through Maven Failsafe.
+
+\subsection{Stage 4: Add Browser End-to-End Tests}
+
+Use Playwright to automate the same flow used in the classroom demonstration. Stable
+\texttt{data-testid} attributes should be added to important controls so tests do not
+depend on translated labels or CSS structure.
+
+\subsection{Stage 5: Add Coverage and Continuous Integration}
+
+Configure JaCoCo and run the unit suite for every push. A CI pipeline should:
+\begin{enumerate}[leftmargin=2em]
+  \item compile the Java application;
+  \item execute unit tests;
+  \item publish Surefire reports;
+  \item generate JaCoCo coverage;
+  \item build and type-check the Vue application; and
+  \item run integration or browser tests in a later job.
+\end{enumerate}
+
+\section{Submission Checklist}
+
+Before submission:
+\begin{enumerate}[leftmargin=2em]
+  \item replace \texttt{XXX} with the real student name;
+  \item replace every \texttt{S2025XXXX} with the real student ID;
+  \item rename this file to \texttt{studentID\_TestAutomation.tex}, for example
+        \texttt{S202512345\_TestAutomation.tex};
+  \item run the verified Maven unit-test command again;
+  \item compile the LaTeX file and inspect the PDF;
+  \item optionally add one or two screenshots of the knowledge-base page and test output;
+  \item ensure the \texttt{.tex} file is placed inside the required SQAM project; and
+  \item submit before June 12, 2026.
+\end{enumerate}
+
+\section{Conclusion}
+
+This work presents the PaiSmart document knowledge base as a focused small web
+application. The module demonstrates a realistic full-stack workflow involving Vue,
+Spring Boot, MySQL, Redis, MinIO, Kafka, document parsing, vectorization, and
+Elasticsearch retrieval. The automated testing work uses the project's existing
+service tests as executable scripts and updates the user-service test to match the
+current production dependencies.
+
+The verified lightweight suite contains 10 tests and completes successfully without
+external infrastructure. This gives the project a practical regression baseline.
+JUnit 5, Mockito, and Maven Surefire already support repeatable unit automation, while
+JaCoCo, Postman/Newman, Playwright, Testcontainers, and JMeter provide a clear route to
+broader coverage. The resulting report therefore documents both a working application
+module and a realistic, staged test automation strategy.
+
+\end{document}
